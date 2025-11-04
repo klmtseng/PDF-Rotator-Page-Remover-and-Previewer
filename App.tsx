@@ -1,9 +1,10 @@
+
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import FileDropzone from './components/FileDropzone';
 import PdfViewer, { Shape } from './components/PdfViewer';
 import { Header } from './components/Header';
-import { RotateCcwIcon, RotateCwIcon, DownloadIcon, TrashIcon, SquareIcon } from './components/Icons';
+import { RotateCcwIcon, RotateCwIcon, DownloadIcon, TrashIcon, SquareIcon, FitToScreenIcon } from './components/Icons';
 import ColorPalette from './components/ColorPalette';
 
 // Type declarations for libraries loaded from CDN
@@ -31,6 +32,7 @@ const App: React.FC = () => {
     const [rotations, setRotations] = useState<{ [key: number]: number }>({});
     const [deletedPages, setDeletedPages] = useState<Set<number>>(new Set());
     const [isSaving, setIsSaving] = useState(false);
+    const [isMerging, setIsMerging] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     // New state for shape drawing
@@ -42,6 +44,9 @@ const App: React.FC = () => {
     const [resizeQuality, setResizeQuality] = useState<number | null>(null);
     const [isEstimating, setIsEstimating] = useState(false);
     const [estimatedSize, setEstimatedSize] = useState<number | null>(null);
+
+    // New state for viewer scale
+    const [scaleMode, setScaleMode] = useState<'fit-page' | 'default'>('default');
 
     const loadPdf = useCallback(async (selectedFile: File) => {
         if (!selectedFile) return;
@@ -183,6 +188,94 @@ const App: React.FC = () => {
             : null;
     };
 
+    const handleFileMerge = async (fileToMerge: File, position: 'before' | 'after') => {
+        if (!file || !pdfDoc) return;
+    
+        setIsMerging(true);
+        setError(null);
+    
+        try {
+            const { PDFDocument, degrees, rgb } = PDFLib;
+    
+            // Step 1: Create a modified version of the current document in memory
+            const existingPdfBytes = await file.arrayBuffer();
+            const mainDoc = await PDFDocument.load(existingPdfBytes);
+    
+            const pagesToDeleteIndices = Array.from(deletedPages).map(p => p - 1).sort((a, b) => b - a);
+            pagesToDeleteIndices.forEach(index => mainDoc.removePage(index));
+            
+            const remainingPages = mainDoc.getPages();
+            const remainingPageNumbers = Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(p => !deletedPages.has(p));
+            
+            remainingPages.forEach((page, index) => {
+                const originalPageNum = remainingPageNumbers[index];
+    
+                const rotationAngle = rotations[originalPageNum] || 0;
+                if (rotationAngle !== 0) {
+                    const rotationResult = page.getRotation();
+                    // FIX: Replaced unary plus with Number() for explicit type coercion to fix TS error.
+                    const currentRotation = Number(typeof rotationResult === 'object' && rotationResult !== null ? rotationResult.angle : rotationResult) || 0;
+                    page.setRotation(degrees(currentRotation + rotationAngle));
+                }
+    
+                const pageShapes = shapes[originalPageNum];
+                if (pageShapes) {
+                    pageShapes.forEach(shape => {
+                        const color = hexToRgb(shape.color);
+                        if(color) {
+                             page.drawRectangle({
+                                x: shape.x, y: page.getHeight() - shape.y - shape.height, width: shape.width, height: shape.height,
+                                color: rgb(color.r, color.g, color.b),
+                                opacity: 0.75,
+                            });
+                        }
+                    });
+                }
+            });
+    
+            // Step 2: Load the document to merge
+            const pdfToMergeBytes = await fileToMerge.arrayBuffer();
+            const docToMerge = await PDFDocument.load(pdfToMergeBytes);
+            const copiedPages = await mainDoc.copyPages(docToMerge, docToMerge.getPageIndices());
+    
+            // Step 3: Find insertion index in the modified document
+            const currentVisibleIndex = visiblePages.indexOf(currentPage);
+            const insertionIndex = position === 'before' ? currentVisibleIndex : currentVisibleIndex + 1;
+
+            // Step 4: Insert the pages
+            copiedPages.forEach((page, i) => {
+                mainDoc.insertPage(insertionIndex + i, page);
+            });
+    
+            // Step 5: Save and reload
+            const mergedPdfBytes = await mainDoc.save();
+            const newFileName = file.name.replace(/\.pdf$/i, '_merged.pdf');
+            const mergedFile = new File([new Blob([mergedPdfBytes], {type: 'application/pdf'})], newFileName, { type: 'application/pdf' });
+            
+            await loadPdf(mergedFile);
+    
+        } catch (err) {
+            console.error(err);
+            setError("Failed to merge PDFs. The selected file might be invalid or corrupted.");
+        } finally {
+            setIsMerging(false);
+        }
+    };
+
+    const initiateMerge = (position: 'before' | 'after') => {
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = 'application/pdf';
+        fileInput.onchange = async (e) => {
+            const target = e.target as HTMLInputElement;
+            if (target.files && target.files.length > 0) {
+                await handleFileMerge(target.files[0], position);
+            }
+        };
+        fileInput.click();
+    };
+
     const handleSave = async () => {
         if (!file || visiblePages.length === 0 || !pdfDoc) return;
 
@@ -241,7 +334,7 @@ const App: React.FC = () => {
                             if (color) {
                                 page.drawRectangle({
                                     x: shape.x,
-                                    y: shape.y,
+                                    y: page.getHeight() - shape.y - shape.height,
                                     width: shape.width,
                                     height: shape.height,
                                     color: rgb(color.r, color.g, color.b),
@@ -276,7 +369,8 @@ const App: React.FC = () => {
                     const rotationAngle = rotations[originalPageNum] || 0;
                     if (rotationAngle !== 0) {
                         const rotationResult = page.getRotation();
-                        const currentRotation = (typeof rotationResult === 'object' && rotationResult !== null ? rotationResult.angle : rotationResult) || 0;
+                        // FIX: Replaced unary plus with Number() for explicit type coercion to fix TS error.
+                        const currentRotation = Number(typeof rotationResult === 'object' && rotationResult !== null ? rotationResult.angle : rotationResult) || 0;
                         page.setRotation(degrees(currentRotation + rotationAngle));
                     }
                     const pageShapes = shapes[originalPageNum];
@@ -286,7 +380,7 @@ const App: React.FC = () => {
                             if(color) {
                                  page.drawRectangle({
                                     x: shape.x,
-                                    y: shape.y,
+                                    y: page.getHeight() - shape.y - shape.height,
                                     width: shape.width,
                                     height: shape.height,
                                     color: rgb(color.r, color.g, color.b),
@@ -328,10 +422,12 @@ const App: React.FC = () => {
       setShapes({});
       setIsDrawingMode(false);
       setIsSaving(false);
+      setIsMerging(false);
       setError(null);
       setResizeQuality(null);
       setEstimatedSize(null);
       setIsEstimating(false);
+      setScaleMode('default');
     }
 
     const goToPrevPage = () => {
@@ -353,6 +449,10 @@ const App: React.FC = () => {
         { name: 'High', value: 0.92 }
     ];
 
+    const toggleScaleMode = () => {
+        setScaleMode(prev => prev === 'default' ? 'fit-page' : 'default');
+    }
+
     return (
         <div className="min-h-screen bg-gray-900 text-gray-200 flex flex-col items-center p-4 sm:p-6 lg:p-8">
             <Header onReset={resetState} fileLoaded={!!file} />
@@ -372,18 +472,27 @@ const App: React.FC = () => {
                                     {file.name} <span className="text-gray-400">({formatBytes(file.size)})</span>
                                 </p>
                                 <div className="flex items-center flex-wrap justify-center gap-2 sm:gap-4">
-                                    <button onClick={() => handleRotate('ccw')} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md transition-colors duration-200 disabled:opacity-50" disabled={isDrawingMode || !file || isSaving || isEstimating}>
+                                    <button onClick={() => handleRotate('ccw')} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md transition-colors duration-200 disabled:opacity-50" disabled={isDrawingMode || !file || isSaving || isEstimating || isMerging}>
                                         <RotateCcwIcon className="h-5 w-5" />
                                         <span className="hidden md:inline">Left</span>
                                     </button>
-                                    <button onClick={() => handleRotate('cw')} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md transition-colors duration-200 disabled:opacity-50" disabled={isDrawingMode || !file || isSaving || isEstimating}>
+                                    <button onClick={() => handleRotate('cw')} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md transition-colors duration-200 disabled:opacity-50" disabled={isDrawingMode || !file || isSaving || isEstimating || isMerging}>
                                         <RotateCwIcon className="h-5 w-5" />
                                         <span className="hidden md:inline">Right</span>
                                     </button>
                                     <button 
+                                        onClick={toggleScaleMode} 
+                                        className={`flex items-center gap-2 text-white font-bold py-2 px-4 rounded-md transition-colors duration-200 disabled:opacity-50 ${scaleMode === 'fit-page' ? 'bg-blue-600 hover:bg-blue-500' : 'bg-gray-700 hover:bg-gray-600'}`}
+                                        disabled={!file || isSaving || isEstimating || isMerging}
+                                        title="Fit page to screen"
+                                    >
+                                        <FitToScreenIcon className="h-5 w-5"/>
+                                        <span className="hidden md:inline">Fit to Page</span>
+                                    </button>
+                                    <button 
                                         onClick={() => setIsDrawingMode(!isDrawingMode)} 
                                         className={`flex items-center gap-2 text-white font-bold py-2 px-4 rounded-md transition-colors duration-200 disabled:opacity-50 ${isDrawingMode ? 'bg-blue-600 hover:bg-blue-500' : 'bg-gray-700 hover:bg-gray-600'}`}
-                                        disabled={!file || isSaving || isEstimating}
+                                        disabled={!file || isSaving || isEstimating || isMerging}
                                     >
                                         <SquareIcon className="h-5 w-5"/>
                                         <span className="hidden md:inline">Add Shape</span>
@@ -391,14 +500,14 @@ const App: React.FC = () => {
                                     <button 
                                         onClick={handleDelete} 
                                         className="flex items-center gap-2 bg-red-800 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed" 
-                                        disabled={isDrawingMode || !file || isSaving || visiblePages.length <= 1 || isEstimating}
+                                        disabled={isDrawingMode || !file || isSaving || visiblePages.length <= 1 || isEstimating || isMerging}
                                         title={visiblePages.length <= 1 ? "Cannot delete the last page" : "Delete current page"}
                                     >
                                         <TrashIcon className="h-5 w-5" />
                                         <span className="hidden md:inline">Delete</span>
                                     </button>
-                                    <button onClick={handleSave} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded-md transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed" disabled={isDrawingMode || !file || isSaving || visiblePages.length === 0 || isEstimating}>
-                                        {isSaving ? (
+                                    <button onClick={handleSave} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded-md transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed" disabled={isDrawingMode || !file || isSaving || visiblePages.length === 0 || isEstimating || isMerging}>
+                                        {isSaving || isMerging ? (
                                             <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -406,7 +515,7 @@ const App: React.FC = () => {
                                         ) : (
                                             <DownloadIcon className="h-5 w-5" />
                                         )}
-                                        <span className="hidden md:inline">{isSaving ? 'Saving...' : 'Save'}</span>
+                                        <span className="hidden md:inline">{isSaving ? 'Saving...' : (isMerging ? 'Merging...' : 'Save')}</span>
                                     </button>
                                 </div>
                             </div>
@@ -419,7 +528,7 @@ const App: React.FC = () => {
                                                 <button
                                                     key={level.name}
                                                     onClick={() => setResizeQuality(level.value)}
-                                                    disabled={isSaving || isDrawingMode || isEstimating}
+                                                    disabled={isSaving || isDrawingMode || isEstimating || isMerging}
                                                     className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                                                         resizeQuality === level.value
                                                             ? 'bg-blue-600 text-white'
@@ -459,14 +568,18 @@ const App: React.FC = () => {
                             rotation={rotations[currentPage] || 0}
                             onPrevPage={goToPrevPage}
                             onNextPage={goToNextPage}
-                            isPrevDisabled={currentVisibleIndex <= 0 || isEstimating}
-                            isNextDisabled={currentVisibleIndex >= visiblePages.length - 1 || isEstimating}
+                            isPrevDisabled={currentVisibleIndex <= 0 || isEstimating || isMerging}
+                            isNextDisabled={currentVisibleIndex >= visiblePages.length - 1 || isEstimating || isMerging}
                             pageLabel={visiblePages.length > 0 ? `${currentVisibleIndex + 1} / ${visiblePages.length}` : '0 / 0'}
                             shapes={shapes[currentPage] || []}
                             isDrawingMode={isDrawingMode}
                             isEstimating={isEstimating}
+                            isMerging={isMerging}
                             currentColor={currentColor}
                             onAddShape={handleAddShape}
+                            scaleMode={scaleMode}
+                            onInitiateMerge={initiateMerge}
+                            onFileDropMerge={handleFileMerge}
                         />
                     </div>
                 )}

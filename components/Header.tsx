@@ -13,7 +13,7 @@ export const Header: React.FC<HeaderProps> = ({ onReset, fileLoaded }) => {
             <div className="flex items-center gap-3">
                 <LogoIcon className="h-8 w-8 text-blue-400" />
                 <h1 className="text-xl sm:text-2xl font-bold text-gray-100">
-                    PDF Rotator
+                    PDF Editor
                 </h1>
             </div>
             {fileLoaded && (

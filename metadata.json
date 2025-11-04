@@ -1,5 +1,5 @@
 {
-  "name": "PDF Rotator, Previewer, Deletor, and Resizer",
-  "description": "An interactive web application to select, preview, rotate, and save PDF files. Users can upload a PDF, navigate through pages, apply rotations to each page individually, and then download the modified file.",
+  "name": "PDF Editor",
+  "description": "An interactive web application to select, preview, rotate, delete, merge, compress, and annotate PDF files. Users can upload a PDF, navigate through pages, apply modifications, and then download the final file.",
   "requestFramePermissions": []
 }

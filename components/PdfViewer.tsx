@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import type { PDFDocumentProxy, PDFPageProxy, PDFPageViewport } from 'pdfjs-dist';
-import { ChevronLeftIcon, ChevronRightIcon } from './Icons';
+import { ChevronLeftIcon, ChevronRightIcon, PlusIcon } from './Icons';
 
 export interface Shape {
     x: number;
@@ -9,6 +10,61 @@ export interface Shape {
     height: number;
     color: string;
 }
+
+interface MergeDropzoneProps {
+    position: 'left' | 'right';
+    onClick: () => void;
+    onDrop: (e: React.DragEvent<HTMLDivElement>) => void;
+}
+
+const MergeDropzone: React.FC<MergeDropzoneProps> = ({ position, onClick, onDrop }) => {
+    const [isDraggingOver, setIsDraggingOver] = useState(false);
+
+    const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDraggingOver(true);
+    };
+
+    const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDraggingOver(false);
+    };
+
+    const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+    };
+    
+    const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDraggingOver(false);
+        onDrop(e);
+    }
+
+    return (
+        <div
+            onClick={onClick}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+            className={`absolute top-0 h-full w-1/4 max-w-[100px] flex items-center justify-center 
+                        bg-gray-700/10 border-dashed border-gray-500/50 
+                        opacity-0 hover:opacity-100 transition-all duration-300 cursor-pointer
+                        ${position === 'left' ? 'left-0 border-r-2' : 'right-0 border-l-2'}
+                        ${isDraggingOver ? 'opacity-100 bg-blue-500/30 border-blue-400' : ''}`}
+        >
+            <div className="text-center text-gray-400 pointer-events-none">
+                <PlusIcon className="w-10 h-10 mx-auto" />
+                <p className="text-sm font-semibold mt-2">Merge {position === 'left' ? 'Before' : 'After'}</p>
+            </div>
+        </div>
+    );
+};
+
 
 interface PdfViewerProps {
     pdfDoc: PDFDocumentProxy | null;
@@ -22,8 +78,12 @@ interface PdfViewerProps {
     shapes: Shape[];
     isDrawingMode: boolean;
     isEstimating?: boolean;
+    isMerging?: boolean;
     currentColor: string;
     onAddShape: (shape: Shape) => void;
+    scaleMode: 'fit-page' | 'default';
+    onInitiateMerge: (position: 'before' | 'after') => void;
+    onFileDropMerge: (file: File, position: 'before' | 'after') => void;
 }
 
 const PdfViewer: React.FC<PdfViewerProps> = ({ 
@@ -38,10 +98,16 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     shapes,
     isDrawingMode,
     isEstimating,
+    isMerging,
     currentColor,
     onAddShape,
+    scaleMode,
+    onInitiateMerge,
+    onFileDropMerge,
 }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const viewerContainerRef = useRef<HTMLDivElement>(null);
+
     const [isLoading, setIsLoading] = useState(true);
     const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
     const [pageViewport, setPageViewport] = useState<PDFPageViewport | null>(null);
@@ -61,9 +127,22 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                 if (isCancelled) return;
                 
                 const canvas = canvasRef.current;
-                if (!canvas) return;
+                const container = viewerContainerRef.current;
+                if (!canvas || !container) return;
 
-                const viewport = page.getViewport({ scale: 1.5, rotation: rotation });
+                let scale = 1.5; // Default scale
+                if (scaleMode === 'fit-page') {
+                    const unrotatedViewport = page.getViewport({ scale: 1 });
+                    // Subtract padding from container size
+                    const containerWidth = container.clientWidth - 220; // 100px zone + 10px padding on each side
+                    const containerHeight = container.clientHeight - 40; // 20px padding top/bottom
+
+                    const scaleX = containerWidth / unrotatedViewport.width;
+                    const scaleY = containerHeight / unrotatedViewport.height;
+                    scale = Math.min(scaleX, scaleY, 2.5); // Cap scale at 2.5
+                }
+
+                const viewport = page.getViewport({ scale: scale, rotation: rotation });
                 setPageViewport(viewport);
                 
                 const context = canvas.getContext('2d');
@@ -102,20 +181,18 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
         return () => {
             isCancelled = true;
         };
-    }, [pdfDoc, currentPage, rotation]);
+    }, [pdfDoc, currentPage, rotation, scaleMode]);
 
     const pageOriginalDimensions = useMemo(() => {
         if (!pageViewport) return { width: 1, height: 1 };
-        // Create a viewport with no rotation to get original dimensions
-        const tempVp = pdfDoc!.getPage(currentPage).then(p => p.getViewport({ scale: 1, rotation: 0 }));
         return {
              width: pageViewport.viewBox[2] - pageViewport.viewBox[0],
              height: pageViewport.viewBox[3] - pageViewport.viewBox[1]
         }
-    }, [pageViewport, currentPage, pdfDoc]);
+    }, [pageViewport]);
 
     const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-        if (!isDrawingMode || isEstimating) return;
+        if (!isDrawingMode || isEstimating || (e.target as HTMLElement).closest('.merge-zone')) return;
         startPoint.current = { x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY };
         setDrawingShapePreview({
             position: 'absolute',
@@ -147,18 +224,22 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
 
         const { left, top, width, height } = drawingShapePreview as {left: number, top: number, width: number, height: number};
 
-        if (width > 0 && height > 0) {
-            // Convert canvas pixel coordinates to PDF point coordinates (origin bottom-left)
-            const scaleX = pageOriginalDimensions.width / canvasSize.width;
-            const scaleY = pageOriginalDimensions.height / canvasSize.height;
+        if (width > 5 && height > 5) { // Minimum size for a shape
+            const rotation = (pageViewport?.rotation || 0) % 360;
+            const originalWidth = pageViewport?.viewBox[2] || 1;
+            const originalHeight = pageViewport?.viewBox[3] || 1;
+            
+            let pdfX, pdfY, pdfWidth, pdfHeight;
+            
+            const scaleX = originalWidth / canvasSize.width;
+            const scaleY = originalHeight / canvasSize.height;
 
-            const pdfWidth = width * scaleX;
-            const pdfHeight = height * scaleY;
-            const pdfX = left * scaleX;
-            // pdf-lib Y is from bottom, canvas Y is from top
-            const pdfY = (canvasSize.height - top - height) * scaleY;
-
-            onAddShape({ x: pdfX, y: pdfY, width: pdfWidth, height: pdfHeight, color: currentColor });
+            pdfWidth = width * scaleX;
+            pdfHeight = height * scaleY;
+            pdfX = left * scaleX;
+            pdfY = (canvasSize.height - top) * scaleY; // pdf-lib y is from bottom left
+            
+            onAddShape({ x: pdfX, y: pdfY - pdfHeight, width: pdfWidth, height: pdfHeight, color: currentColor });
         }
 
         startPoint.current = null;
@@ -166,14 +247,17 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     };
 
     const renderedShapes = useMemo(() => {
+        if (!pageViewport) return [];
         return shapes.map((shape, index) => {
-            const scaleX = canvasSize.width / pageOriginalDimensions.width;
-            const scaleY = canvasSize.height / pageOriginalDimensions.height;
+            const originalWidth = pageViewport.viewBox[2];
+            const originalHeight = pageViewport.viewBox[3];
+
+            const scaleX = canvasSize.width / originalWidth;
+            const scaleY = canvasSize.height / originalHeight;
 
             const pixelWidth = shape.width * scaleX;
             const pixelHeight = shape.height * scaleY;
             const pixelX = shape.x * scaleX;
-            // Convert PDF Y (from bottom) to canvas Y (from top)
             const pixelY = canvasSize.height - (shape.y * scaleY) - pixelHeight;
 
             return (
@@ -192,13 +276,24 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                 />
             );
         });
-    }, [shapes, canvasSize, pageOriginalDimensions]);
+    }, [shapes, canvasSize, pageViewport]);
 
+    const handleFileDrop = useCallback((e: React.DragEvent<HTMLDivElement>, position: 'before' | 'after') => {
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            const droppedFile = e.dataTransfer.files[0];
+            if (droppedFile.type === 'application/pdf') {
+                onFileDropMerge(droppedFile, position);
+            } else {
+                alert('Please drop a PDF file.');
+            }
+        }
+    }, [onFileDropMerge]);
 
     return (
         <div className="w-full flex flex-col items-center gap-4">
             <div 
-                className={`relative w-full flex justify-center items-center min-h-[400px] sm:min-h-[600px] lg:min-h-[800px] ${isDrawingMode && !isEstimating ? 'cursor-crosshair' : ''}`}
+                ref={viewerContainerRef}
+                className={`relative w-full flex justify-center items-center p-5 min-h-[400px] sm:min-h-[600px] lg:min-h-[800px] ${isDrawingMode && !isEstimating ? 'cursor-crosshair' : ''}`}
                  onMouseDown={handleMouseDown}
                  onMouseMove={handleMouseMove}
                  onMouseUp={handleMouseUp}
@@ -224,6 +319,21 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                         <div style={drawingShapePreview} />
                     )}
                 </div>
+
+                {!isMerging && !isEstimating && pdfDoc && (
+                    <>
+                       <MergeDropzone 
+                           position="left" 
+                           onClick={() => onInitiateMerge('before')}
+                           onDrop={(e) => handleFileDrop(e, 'before')}
+                       />
+                       <MergeDropzone 
+                           position="right"
+                           onClick={() => onInitiateMerge('after')}
+                           onDrop={(e) => handleFileDrop(e, 'after')}
+                        />
+                    </>
+                )}
 
             </div>
              {pdfDoc && (

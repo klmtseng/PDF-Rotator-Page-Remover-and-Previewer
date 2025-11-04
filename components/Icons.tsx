@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 type IconProps = React.SVGProps<SVGSVGElement>;
@@ -71,5 +72,29 @@ export const TrashIcon: React.FC<IconProps> = (props) => (
 export const SquareIcon: React.FC<IconProps> = (props) => (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
         <rect width="18" height="18" x="3" y="3" rx="2"/>
+    </svg>
+);
+
+export const MergeIcon: React.FC<IconProps> = (props) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+        <path d="m13 11 8 8" />
+        <path d="M13 3h8v8" />
+        <path d="M11 3H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+    </svg>
+);
+
+export const FitToScreenIcon: React.FC<IconProps> = (props) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M4 8V4h4" />
+      <path d="M20 8V4h-4" />
+      <path d="M4 16v4h4" />
+      <path d="M20 16v4h-4" />
+    </svg>
+);
+
+export const PlusIcon: React.FC<IconProps> = (props) => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
     </svg>
 );
