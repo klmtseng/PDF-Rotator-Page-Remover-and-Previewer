@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import FileDropzone from './components/FileDropzone';
@@ -213,9 +214,11 @@ const App: React.FC = () => {
     
                 const rotationAngle = rotations[originalPageNum] || 0;
                 if (rotationAngle !== 0) {
+                    // FIX: The `getRotation` method returns a complex object. To prevent type errors in arithmetic operations,
+                    // we explicitly check if `angle` is a number before using it. This is safer than relying on optional
+                    // chaining with `any` types, which can lead to type inference issues.
                     const rotationResult = page.getRotation();
-                    // FIX: Replaced unary plus with Number() for explicit type coercion to fix TS error.
-                    const currentRotation = Number(typeof rotationResult === 'object' && rotationResult !== null ? rotationResult.angle : rotationResult) || 0;
+                    const currentRotation = (rotationResult && typeof rotationResult.angle === 'number') ? rotationResult.angle : 0;
                     page.setRotation(degrees(currentRotation + rotationAngle));
                 }
     
@@ -368,9 +371,11 @@ const App: React.FC = () => {
                     const originalPageNum = remainingPageNumbers[index];
                     const rotationAngle = rotations[originalPageNum] || 0;
                     if (rotationAngle !== 0) {
+                        // FIX: The `getRotation` method returns a complex object. To prevent type errors in arithmetic operations,
+                        // we explicitly check if `angle` is a number before using it. This is safer than relying on optional
+                        // chaining with `any` types, which can lead to type inference issues.
                         const rotationResult = page.getRotation();
-                        // FIX: Replaced unary plus with Number() for explicit type coercion to fix TS error.
-                        const currentRotation = Number(typeof rotationResult === 'object' && rotationResult !== null ? rotationResult.angle : rotationResult) || 0;
+                        const currentRotation = (rotationResult && typeof rotationResult.angle === 'number') ? rotationResult.angle : 0;
                         page.setRotation(degrees(currentRotation + rotationAngle));
                     }
                     const pageShapes = shapes[originalPageNum];
@@ -471,15 +476,18 @@ const App: React.FC = () => {
                                 <p className="text-sm font-medium truncate" title={`${file.name} (${formatBytes(file.size)})`}>
                                     {file.name} <span className="text-gray-400">({formatBytes(file.size)})</span>
                                 </p>
-                                <div className="flex items-center flex-wrap justify-center gap-2 sm:gap-4">
-                                    <button onClick={() => handleRotate('ccw')} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md transition-colors duration-200 disabled:opacity-50" disabled={isDrawingMode || !file || isSaving || isEstimating || isMerging}>
-                                        <RotateCcwIcon className="h-5 w-5" />
-                                        <span className="hidden md:inline">Left</span>
-                                    </button>
-                                    <button onClick={() => handleRotate('cw')} className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md transition-colors duration-200 disabled:opacity-50" disabled={isDrawingMode || !file || isSaving || isEstimating || isMerging}>
-                                        <RotateCwIcon className="h-5 w-5" />
-                                        <span className="hidden md:inline">Right</span>
-                                    </button>
+                                <div className="flex items-center flex-wrap justify-center sm:justify-end gap-3">
+                                    <div className="flex items-center rounded-md bg-gray-700">
+                                        <button onClick={() => handleRotate('ccw')} className="flex items-center gap-2 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-l-md transition-colors duration-200 disabled:opacity-50" disabled={isDrawingMode || !file || isSaving || isEstimating || isMerging} title="Rotate Left">
+                                            <RotateCcwIcon className="h-5 w-5" />
+                                            <span className="hidden md:inline">Left</span>
+                                        </button>
+                                        <div className="w-px h-6 bg-gray-600"></div>
+                                        <button onClick={() => handleRotate('cw')} className="flex items-center gap-2 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-r-md transition-colors duration-200 disabled:opacity-50" disabled={isDrawingMode || !file || isSaving || isEstimating || isMerging} title="Rotate Right">
+                                            <RotateCwIcon className="h-5 w-5" />
+                                            <span className="hidden md:inline">Right</span>
+                                        </button>
+                                    </div>
                                     <button 
                                         onClick={toggleScaleMode} 
                                         className={`flex items-center gap-2 text-white font-bold py-2 px-4 rounded-md transition-colors duration-200 disabled:opacity-50 ${scaleMode === 'fit-page' ? 'bg-blue-600 hover:bg-blue-500' : 'bg-gray-700 hover:bg-gray-600'}`}
@@ -519,47 +527,45 @@ const App: React.FC = () => {
                                     </button>
                                 </div>
                             </div>
-                            <div className="mt-4 pt-4 border-t border-gray-700 flex flex-col items-center gap-4">
-                                <div className="flex flex-wrap justify-center items-center gap-x-6 gap-y-4">
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-sm font-medium text-gray-300">Compression:</span>
-                                        <div className="flex items-center gap-1 bg-gray-900/50 p-1 rounded-md">
-                                            {qualityLevels.map(level => (
-                                                <button
-                                                    key={level.name}
-                                                    onClick={() => setResizeQuality(level.value)}
-                                                    disabled={isSaving || isDrawingMode || isEstimating || isMerging}
-                                                    className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                                                        resizeQuality === level.value
-                                                            ? 'bg-blue-600 text-white'
-                                                            : 'bg-transparent text-gray-300 hover:bg-gray-700'
-                                                    }`}
-                                                >
-                                                    {level.name}
-                                                </button>
-                                            ))}
-                                        </div>
-                                         {(isEstimating || estimatedSize) && (
-                                            <div className="text-sm text-gray-400 font-mono ml-2 w-24 text-center">
-                                                Est: {isEstimating ? '...' : (estimatedSize ? formatBytes(estimatedSize) : '')}
-                                            </div>
-                                        )}
-                                    </div>
-                                    {isDrawingMode && (
-                                        <div className="flex items-center gap-2">
-                                            <ColorPalette selectedColor={currentColor} onSelectColor={setCurrentColor} />
-                                            <button 
-                                                onClick={handleClearPageShapes}
-                                                className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-3 rounded-md transition-colors duration-200 text-sm"
-                                                title="Clear all shapes from this page"
-                                                disabled={!shapes[currentPage] || shapes[currentPage].length === 0}
+                            <div className="mt-4 pt-4 border-t border-gray-700 flex flex-wrap justify-center sm:justify-between items-center gap-4">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium text-gray-300">Compression:</span>
+                                    <div className="flex items-center gap-1 bg-gray-900/50 p-1 rounded-md">
+                                        {qualityLevels.map(level => (
+                                            <button
+                                                key={level.name}
+                                                onClick={() => setResizeQuality(level.value)}
+                                                disabled={isSaving || isDrawingMode || isEstimating || isMerging}
+                                                className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                                                    resizeQuality === level.value
+                                                        ? 'bg-blue-600 text-white'
+                                                        : 'bg-transparent text-gray-300 hover:bg-gray-700'
+                                                }`}
                                             >
-                                                <TrashIcon className="h-4 w-4" />
-                                                <span className="hidden sm:inline">Clear Shapes</span>
+                                                {level.name}
                                             </button>
+                                        ))}
+                                    </div>
+                                     {(isEstimating || estimatedSize) && (
+                                        <div className="text-sm text-gray-400 font-mono ml-4 whitespace-nowrap">
+                                            Est. Size: {isEstimating ? '...' : (estimatedSize ? formatBytes(estimatedSize) : '')}
                                         </div>
                                     )}
                                 </div>
+                                {isDrawingMode && (
+                                    <div className="flex items-center gap-2">
+                                        <ColorPalette selectedColor={currentColor} onSelectColor={setCurrentColor} />
+                                        <button 
+                                            onClick={handleClearPageShapes}
+                                            className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-3 rounded-md transition-colors duration-200 text-sm"
+                                            title="Clear all shapes from this page"
+                                            disabled={!shapes[currentPage] || shapes[currentPage].length === 0}
+                                        >
+                                            <TrashIcon className="h-4 w-4" />
+                                            <span className="hidden sm:inline">Clear Shapes</span>
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </div>
                         <PdfViewer 
