@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import FileDropzone from './components/FileDropzone';
@@ -39,7 +40,7 @@ const App: React.FC = () => {
     // New state for shape drawing
     const [shapes, setShapes] = useState<{ [key: number]: Shape[] }>({});
     const [isDrawingMode, setIsDrawingMode] = useState(false);
-    const [currentColor, setCurrentColor] = useState('#ef4444'); // Default red
+    const [currentColor, setCurrentColor] = useState('rgba(239, 68, 68, 0.75)'); // Default red with opacity
     
     // New state for resizing
     const [resizeQuality, setResizeQuality] = useState<number | null>(null);
@@ -119,7 +120,9 @@ const App: React.FC = () => {
                 canvas.width = viewport.width;
                 canvas.height = viewport.height;
 
-                await page.render({ canvasContext: context, viewport: viewport }).promise;
+                // FIX: Added 'canvas' property to the render parameters to satisfy the TypeScript compiler.
+                // This seems to be required by a mismatched or erroneous type definition for `RenderParameters`.
+                await page.render({ canvas, canvasContext: context, viewport: viewport }).promise;
                 
                 const blob = await new Promise<Blob | null>(resolve => 
                     canvas.toBlob(resolve, 'image/jpeg', resizeQuality)
@@ -178,15 +181,17 @@ const App: React.FC = () => {
         });
     }, [currentPage]);
 
-    const hexToRgb = (hex: string) => {
-        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-        return result
-            ? {
-                r: parseInt(result[1], 16) / 255,
-                g: parseInt(result[2], 16) / 255,
-                b: parseInt(result[3], 16) / 255,
-              }
-            : null;
+    const parseRgbaForPdfLib = (rgba: string) => {
+        const result = rgba.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+        if (result) {
+            return {
+                r: parseInt(result[1], 10) / 255,
+                g: parseInt(result[2], 10) / 255,
+                b: parseInt(result[3], 10) / 255,
+                a: result[4] !== undefined ? parseFloat(result[4]) : 1,
+            };
+        }
+        return null;
     };
 
     const handleFileMerge = async (fileToMerge: File, position: 'before' | 'after') => {
@@ -214,23 +219,21 @@ const App: React.FC = () => {
     
                 const rotationAngle = rotations[originalPageNum] || 0;
                 if (rotationAngle !== 0) {
-                    // FIX: The `getRotation` method returns a complex object. To prevent type errors in arithmetic operations,
-                    // we explicitly check if `angle` is a number before using it. This is safer than relying on optional
-                    // chaining with `any` types, which can lead to type inference issues.
                     const rotationResult = page.getRotation();
                     const currentRotation = (rotationResult && typeof rotationResult.angle === 'number') ? rotationResult.angle : 0;
-                    page.setRotation(degrees(currentRotation + rotationAngle));
+                    // FIX: Swapped operands to ensure the left-hand side is a number, satisfying TypeScript's type checker.
+                    page.setRotation(degrees(rotationAngle + currentRotation));
                 }
     
                 const pageShapes = shapes[originalPageNum];
                 if (pageShapes) {
                     pageShapes.forEach(shape => {
-                        const color = hexToRgb(shape.color);
+                        const color = parseRgbaForPdfLib(shape.color);
                         if(color) {
                              page.drawRectangle({
                                 x: shape.x, y: page.getHeight() - shape.y - shape.height, width: shape.width, height: shape.height,
                                 color: rgb(color.r, color.g, color.b),
-                                opacity: 0.75,
+                                opacity: color.a,
                             });
                         }
                     });
@@ -303,8 +306,10 @@ const App: React.FC = () => {
                     canvas.height = viewport.height;
                     const context = canvas.getContext('2d');
                     if (!context) throw new Error("Could not get canvas context");
-
-                    await page.render({ canvasContext: context, viewport }).promise;
+                    
+                    // FIX: Added 'canvas' property to the render parameters to satisfy the TypeScript compiler.
+                    // This seems to be required by a mismatched or erroneous type definition for `RenderParameters`.
+                    await page.render({ canvas, canvasContext: context, viewport }).promise;
                     
                     const jpegDataUrl = canvas.toDataURL('image/jpeg', resizeQuality);
                     const jpegBytes = await fetch(jpegDataUrl).then(res => res.arrayBuffer());
@@ -333,7 +338,7 @@ const App: React.FC = () => {
                     const pageShapes = shapes[originalPageNum];
                     if (pageShapes) {
                         pageShapes.forEach(shape => {
-                            const color = hexToRgb(shape.color);
+                            const color = parseRgbaForPdfLib(shape.color);
                             if (color) {
                                 page.drawRectangle({
                                     x: shape.x,
@@ -341,7 +346,7 @@ const App: React.FC = () => {
                                     width: shape.width,
                                     height: shape.height,
                                     color: rgb(color.r, color.g, color.b),
-                                    opacity: 0.75,
+                                    opacity: color.a,
                                 });
                             }
                         });
@@ -371,17 +376,15 @@ const App: React.FC = () => {
                     const originalPageNum = remainingPageNumbers[index];
                     const rotationAngle = rotations[originalPageNum] || 0;
                     if (rotationAngle !== 0) {
-                        // FIX: The `getRotation` method returns a complex object. To prevent type errors in arithmetic operations,
-                        // we explicitly check if `angle` is a number before using it. This is safer than relying on optional
-                        // chaining with `any` types, which can lead to type inference issues.
                         const rotationResult = page.getRotation();
                         const currentRotation = (rotationResult && typeof rotationResult.angle === 'number') ? rotationResult.angle : 0;
-                        page.setRotation(degrees(currentRotation + rotationAngle));
+                        // FIX: Swapped operands to ensure the left-hand side is a number, satisfying TypeScript's type checker.
+                        page.setRotation(degrees(rotationAngle + currentRotation));
                     }
                     const pageShapes = shapes[originalPageNum];
                     if (pageShapes) {
                         pageShapes.forEach(shape => {
-                            const color = hexToRgb(shape.color);
+                            const color = parseRgbaForPdfLib(shape.color);
                             if(color) {
                                  page.drawRectangle({
                                     x: shape.x,
@@ -389,7 +392,7 @@ const App: React.FC = () => {
                                     width: shape.width,
                                     height: shape.height,
                                     color: rgb(color.r, color.g, color.b),
-                                    opacity: 0.75,
+                                    opacity: color.a,
                                 });
                             }
                         });
@@ -553,7 +556,7 @@ const App: React.FC = () => {
                                     )}
                                 </div>
                                 {isDrawingMode && (
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-4">
                                         <ColorPalette selectedColor={currentColor} onSelectColor={setCurrentColor} />
                                         <button 
                                             onClick={handleClearPageShapes}

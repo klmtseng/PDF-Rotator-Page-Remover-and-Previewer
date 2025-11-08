@@ -1,6 +1,9 @@
 
+
+
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
-import type { PDFDocumentProxy, PDFPageProxy, PDFPageViewport } from 'pdfjs-dist';
+// FIX: The type `PDFPageViewport` has been renamed to `PageViewport` in recent versions of pdfjs-dist.
+import type { PDFDocumentProxy, PDFPageProxy, PageViewport } from 'pdfjs-dist';
 import { ChevronLeftIcon, ChevronRightIcon, PlusIcon } from './Icons';
 
 export interface Shape {
@@ -15,9 +18,10 @@ interface MergeDropzoneProps {
     position: 'left' | 'right';
     onClick: () => void;
     onDrop: (e: React.DragEvent<HTMLDivElement>) => void;
+    isContainerDragging: boolean;
 }
 
-const MergeDropzone: React.FC<MergeDropzoneProps> = ({ position, onClick, onDrop }) => {
+const MergeDropzone: React.FC<MergeDropzoneProps> = ({ position, onClick, onDrop, isContainerDragging }) => {
     const [isDraggingOver, setIsDraggingOver] = useState(false);
 
     const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
@@ -52,10 +56,11 @@ const MergeDropzone: React.FC<MergeDropzoneProps> = ({ position, onClick, onDrop
             onDragOver={handleDragOver}
             onDrop={handleDrop}
             className={`absolute top-0 h-full w-1/4 max-w-[100px] flex items-center justify-center 
-                        bg-gray-700/10 border-dashed border-gray-500/50 
-                        opacity-0 hover:opacity-100 transition-all duration-300 cursor-pointer
+                        border-dashed
+                        transition-all duration-300 cursor-pointer
                         ${position === 'left' ? 'left-0 border-r-2' : 'right-0 border-l-2'}
-                        ${isDraggingOver ? 'opacity-100 bg-blue-500/30 border-blue-400' : ''}`}
+                        ${isContainerDragging ? 'opacity-100' : 'opacity-0 hover:opacity-100'}
+                        ${isDraggingOver ? 'bg-blue-500/30 border-blue-400' : 'bg-gray-700/10 border-gray-500/50'}`}
         >
             <div className="text-center text-gray-400 pointer-events-none">
                 <PlusIcon className="w-10 h-10 mx-auto" />
@@ -110,7 +115,8 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
 
     const [isLoading, setIsLoading] = useState(true);
     const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
-    const [pageViewport, setPageViewport] = useState<PDFPageViewport | null>(null);
+    const [pageViewport, setPageViewport] = useState<PageViewport | null>(null);
+    const [isDraggingFileOver, setIsDraggingFileOver] = useState(false);
 
     // State for drawing
     const [drawingShapePreview, setDrawingShapePreview] = useState<React.CSSProperties | null>(null);
@@ -160,9 +166,12 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                 
                 const transform = outputScale !== 1 
                     ? [outputScale, 0, 0, outputScale, 0, 0] 
-                    : null;
+                    : undefined;
 
+                // FIX: Added 'canvas' property to the render parameters to satisfy the TypeScript compiler.
+                // This seems to be required by a mismatched or erroneous type definition for `RenderParameters`.
                 const renderContext = {
+                    canvas,
                     canvasContext: context,
                     viewport: viewport,
                     transform: transform,
@@ -194,6 +203,10 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
         if (!isDrawingMode || isEstimating || (e.target as HTMLElement).closest('.merge-zone')) return;
         startPoint.current = { x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY };
+
+        const colorParts = currentColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+        const solidBorderColor = colorParts ? `rgb(${colorParts[1]}, ${colorParts[2]}, ${colorParts[3]})` : currentColor;
+
         setDrawingShapePreview({
             position: 'absolute',
             left: startPoint.current.x,
@@ -201,8 +214,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
             width: 0,
             height: 0,
             backgroundColor: currentColor,
-            opacity: 0.5,
-            border: `1px solid ${currentColor}`,
+            border: `1px solid ${solidBorderColor}`,
         });
     };
 
@@ -225,19 +237,15 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
         const { left, top, width, height } = drawingShapePreview as {left: number, top: number, width: number, height: number};
 
         if (width > 5 && height > 5) { // Minimum size for a shape
-            const rotation = (pageViewport?.rotation || 0) % 360;
             const originalWidth = pageViewport?.viewBox[2] || 1;
-            const originalHeight = pageViewport?.viewBox[3] || 1;
-            
-            let pdfX, pdfY, pdfWidth, pdfHeight;
             
             const scaleX = originalWidth / canvasSize.width;
-            const scaleY = originalHeight / canvasSize.height;
+            const scaleY = originalWidth / canvasSize.width; // Assume square pixels for simplicity in drawing
 
-            pdfWidth = width * scaleX;
-            pdfHeight = height * scaleY;
-            pdfX = left * scaleX;
-            pdfY = (canvasSize.height - top) * scaleY; // pdf-lib y is from bottom left
+            const pdfWidth = width * scaleX;
+            const pdfHeight = height * scaleY;
+            const pdfX = left * scaleX;
+            const pdfY = (canvasSize.height - top) * scaleY; // pdf-lib y is from bottom left
             
             onAddShape({ x: pdfX, y: pdfY - pdfHeight, width: pdfWidth, height: pdfHeight, color: currentColor });
         }
@@ -270,7 +278,6 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                         width: `${pixelWidth}px`,
                         height: `${pixelHeight}px`,
                         backgroundColor: shape.color,
-                        opacity: 0.75,
                         pointerEvents: 'none',
                     }}
                 />
@@ -279,6 +286,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     }, [shapes, canvasSize, pageViewport]);
 
     const handleFileDrop = useCallback((e: React.DragEvent<HTMLDivElement>, position: 'before' | 'after') => {
+        setIsDraggingFileOver(false);
         if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
             const droppedFile = e.dataTransfer.files[0];
             if (droppedFile.type === 'application/pdf') {
@@ -289,6 +297,27 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
         }
     }, [onFileDropMerge]);
 
+    const handleContainerDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+    };
+
+    const handleContainerDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.dataTransfer.types && e.dataTransfer.types.includes('Files')) {
+            setIsDraggingFileOver(true);
+        }
+    };
+
+    const handleContainerDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+            setIsDraggingFileOver(false);
+        }
+    };
+
     return (
         <div className="w-full flex flex-col items-center gap-4">
             <div 
@@ -298,6 +327,10 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                  onMouseMove={handleMouseMove}
                  onMouseUp={handleMouseUp}
                  onMouseLeave={handleMouseUp} // Finalize shape if mouse leaves area
+                 onDragEnter={handleContainerDragEnter}
+                 onDragLeave={handleContainerDragLeave}
+                 onDragOver={handleContainerDragOver}
+                 onDrop={() => setIsDraggingFileOver(false)}
             >
                 {isLoading && (
                      <div className="absolute inset-0 flex items-center justify-center bg-gray-800/50 rounded-lg z-20">
@@ -326,11 +359,13 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                            position="left" 
                            onClick={() => onInitiateMerge('before')}
                            onDrop={(e) => handleFileDrop(e, 'before')}
+                           isContainerDragging={isDraggingFileOver}
                        />
                        <MergeDropzone 
                            position="right"
                            onClick={() => onInitiateMerge('after')}
                            onDrop={(e) => handleFileDrop(e, 'after')}
+                           isContainerDragging={isDraggingFileOver}
                         />
                     </>
                 )}
