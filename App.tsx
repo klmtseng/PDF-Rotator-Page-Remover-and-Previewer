@@ -6,6 +6,7 @@ import { Header } from './components/Header';
 import { RotateCcwIcon, RotateCwIcon, DownloadIcon, TrashIcon, SquareIcon, FitToScreenIcon, SaveAsIcon, ZoomInIcon, ZoomOutIcon } from './components/Icons';
 import ColorPalette from './components/ColorPalette';
 import SaveAsModal from './components/SaveAsModal';
+import Pagination from './components/Pagination';
 
 // Type declarations for libraries loaded from CDN
 declare const pdfjsLib: any;
@@ -265,9 +266,7 @@ const App: React.FC = () => {
             const mergedFile = new File([new Blob([mergedPdfBytes], {type: 'application/pdf'})], newFileName, { type: 'application/pdf' });
             
             const numCopiedPages = copiedPages.length;
-            const startingPage = numCopiedPages > 1
-                ? insertionIndex + numCopiedPages
-                : insertionIndex + 1;
+            const startingPage = insertionIndex + numCopiedPages;
 
             await loadPdf(mergedFile, startingPage);
     
@@ -480,6 +479,13 @@ const App: React.FC = () => {
         }
     };
 
+    const goToPage = (pageNumber: number) => {
+        if (pageNumber >= 1 && pageNumber <= visiblePages.length) {
+            const actualPage = visiblePages[pageNumber - 1];
+            setCurrentPage(actualPage);
+        }
+    };
+
     const qualityLevels = [
         { name: 'None', value: null },
         { name: 'Low', value: 0.5 },
@@ -610,11 +616,6 @@ const App: React.FC = () => {
                             pdfDoc={pdfDoc}
                             currentPage={currentPage}
                             rotation={rotations[currentPage] || 0}
-                            onPrevPage={goToPrevPage}
-                            onNextPage={goToNextPage}
-                            isPrevDisabled={currentVisibleIndex <= 0}
-                            isNextDisabled={currentVisibleIndex >= visiblePages.length - 1}
-                            pageLabel={`${currentVisibleIndex + 1} / ${visiblePages.length}`}
                             shapes={shapes[currentPage] || []}
                             isDrawingMode={isDrawingMode}
                             isEstimating={isEstimating}
@@ -625,6 +626,14 @@ const App: React.FC = () => {
                             scale={scale}
                             onInitiateMerge={initiateMerge}
                             onFileDropMerge={handleFileMerge}
+                         />
+                         <Pagination
+                            currentPage={currentVisibleIndex + 1}
+                            totalPages={visiblePages.length}
+                            onPrev={goToPrevPage}
+                            onNext={goToNextPage}
+                            onGoToPage={goToPage}
+                            isDisabled={isDrawingMode || isSaving || isEstimating || isMerging}
                          />
                     </div>
                 )}

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 // FIX: The type `PDFPageViewport` has been renamed to `PageViewport` in recent versions of pdfjs-dist.
 import type { PDFDocumentProxy, PDFPageProxy, PageViewport } from 'pdfjs-dist';
-import { ChevronLeftIcon, ChevronRightIcon, PlusIcon } from './Icons';
+import { PlusIcon } from './Icons';
 
 export interface Shape {
     x: number;
@@ -72,11 +72,6 @@ interface PdfViewerProps {
     pdfDoc: PDFDocumentProxy | null;
     currentPage: number;
     rotation: number;
-    onPrevPage: () => void;
-    onNextPage: () => void;
-    isPrevDisabled: boolean;
-    isNextDisabled: boolean;
-    pageLabel: string;
     shapes: Shape[];
     isDrawingMode: boolean;
     isEstimating?: boolean;
@@ -93,11 +88,6 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     pdfDoc, 
     currentPage, 
     rotation, 
-    onPrevPage, 
-    onNextPage, 
-    isPrevDisabled, 
-    isNextDisabled, 
-    pageLabel,
     shapes,
     isDrawingMode,
     isEstimating,
@@ -372,29 +362,6 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                 )}
 
             </div>
-             {pdfDoc && (
-                <div className="flex items-center justify-center gap-4 bg-gray-800/50 border border-gray-700 rounded-full py-2 px-4 backdrop-blur-sm">
-                    <button 
-                        onClick={onPrevPage}
-                        disabled={isPrevDisabled || isDrawingMode} 
-                        className="p-2 rounded-full hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        aria-label="Previous Page"
-                    >
-                        <ChevronLeftIcon className="h-6 w-6" />
-                    </button>
-                    <span className="text-lg font-mono w-24 text-center" aria-live="polite">
-                        {pageLabel}
-                    </span>
-                    <button 
-                        onClick={onNextPage}
-                        disabled={isNextDisabled || isDrawingMode}
-                        className="p-2 rounded-full hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        aria-label="Next Page"
-                    >
-                        <ChevronRightIcon className="h-6 w-6" />
-                    </button>
-                </div>
-            )}
         </div>
     );
 };
