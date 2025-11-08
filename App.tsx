@@ -259,7 +259,11 @@ const App: React.FC = () => {
             const newFileName = file.name.replace(/\.pdf$/i, '_merged.pdf');
             const mergedFile = new File([new Blob([mergedPdfBytes], {type: 'application/pdf'})], newFileName, { type: 'application/pdf' });
             
-            const startingPage = insertionIndex + 1;
+            const numCopiedPages = copiedPages.length;
+            const startingPage = numCopiedPages > 1
+                ? insertionIndex + numCopiedPages
+                : insertionIndex + 1;
+
             await loadPdf(mergedFile, startingPage);
     
         } catch (err) {
