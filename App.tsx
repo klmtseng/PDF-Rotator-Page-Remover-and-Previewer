@@ -47,7 +47,7 @@ const App: React.FC = () => {
     // New state for viewer scale
     const [scaleMode, setScaleMode] = useState<'fit-page' | 'default'>('default');
 
-    const loadPdf = useCallback(async (selectedFile: File) => {
+    const loadPdf = useCallback(async (selectedFile: File, startingPage?: number) => {
         if (!selectedFile) return;
 
         resetState(false);
@@ -58,6 +58,9 @@ const App: React.FC = () => {
             const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
             setPdfDoc(pdf);
             setTotalPages(pdf.numPages);
+            if (startingPage && startingPage > 0 && startingPage <= pdf.numPages) {
+                setCurrentPage(startingPage);
+            }
         } catch (e) {
             console.error(e);
             setError("Failed to load PDF. The file might be corrupted or invalid.");
@@ -256,7 +259,8 @@ const App: React.FC = () => {
             const newFileName = file.name.replace(/\.pdf$/i, '_merged.pdf');
             const mergedFile = new File([new Blob([mergedPdfBytes], {type: 'application/pdf'})], newFileName, { type: 'application/pdf' });
             
-            await loadPdf(mergedFile);
+            const startingPage = insertionIndex + 1;
+            await loadPdf(mergedFile, startingPage);
     
         } catch (err) {
             console.error(err);
