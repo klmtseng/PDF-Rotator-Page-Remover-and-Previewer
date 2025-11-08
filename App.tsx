@@ -1,12 +1,9 @@
-
-
-
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import FileDropzone from './components/FileDropzone';
 import PdfViewer, { Shape } from './components/PdfViewer';
 import { Header } from './components/Header';
-import { RotateCcwIcon, RotateCwIcon, DownloadIcon, TrashIcon, SquareIcon, FitToScreenIcon } from './components/Icons';
+import { RotateCcwIcon, RotateCwIcon, DownloadIcon, TrashIcon, SquareIcon, FitToScreenIcon, SaveAsIcon } from './components/Icons';
 import ColorPalette from './components/ColorPalette';
 
 // Type declarations for libraries loaded from CDN
@@ -282,7 +279,7 @@ const App: React.FC = () => {
         fileInput.click();
     };
 
-    const handleSave = async () => {
+    const handleSave = async (fileName?: string) => {
         if (!file || visiblePages.length === 0 || !pdfDoc) return;
 
         setIsSaving(true);
@@ -405,8 +402,14 @@ const App: React.FC = () => {
             const blob = new Blob([pdfBytes], { type: 'application/pdf' });
             const link = document.createElement('a');
             link.href = URL.createObjectURL(blob);
-            const originalName = file.name.replace(/\.pdf$/i, '');
-            link.download = `${originalName}_modified.pdf`;
+            
+            if (fileName) {
+                link.download = fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`;
+            } else {
+                const originalName = file.name.replace(/\.pdf$/i, '');
+                link.download = `${originalName}_modified.pdf`;
+            }
+
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -417,6 +420,16 @@ const App: React.FC = () => {
             setError("Failed to save the PDF. An unexpected error occurred.");
         } finally {
             setIsSaving(false);
+        }
+    };
+    
+    const handleSaveAs = () => {
+        if (!file) return;
+        const originalName = file.name.replace(/\.pdf$/i, '');
+        const suggestedName = `${originalName}_copy.pdf`;
+        const newName = window.prompt("Enter new file name:", suggestedName);
+        if (newName && newName.trim() !== "") {
+            handleSave(newName.trim());
         }
     };
     
@@ -504,82 +517,68 @@ const App: React.FC = () => {
                                         onClick={() => setIsDrawingMode(!isDrawingMode)} 
                                         className={`flex items-center gap-2 text-white font-bold py-2 px-4 rounded-md transition-colors duration-200 disabled:opacity-50 ${isDrawingMode ? 'bg-blue-600 hover:bg-blue-500' : 'bg-gray-700 hover:bg-gray-600'}`}
                                         disabled={!file || isSaving || isEstimating || isMerging}
+                                        title="Toggle drawing mode"
                                     >
-                                        <SquareIcon className="h-5 w-5"/>
-                                        <span className="hidden md:inline">Add Shape</span>
+                                        <SquareIcon className="h-5 w-5" />
+                                        <span className="hidden md:inline">Draw</span>
                                     </button>
-                                    <button 
-                                        onClick={handleDelete} 
-                                        className="flex items-center gap-2 bg-red-800 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-md transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed" 
-                                        disabled={isDrawingMode || !file || isSaving || visiblePages.length <= 1 || isEstimating || isMerging}
-                                        title={visiblePages.length <= 1 ? "Cannot delete the last page" : "Delete current page"}
-                                    >
+                                    {isDrawingMode && (
+                                        <ColorPalette selectedColor={currentColor} onSelectColor={setCurrentColor} />
+                                    )}
+                                    <button onClick={handleDelete} className="flex items-center gap-2 bg-red-700 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-md transition-colors duration-200 disabled:opacity-50 disabled:bg-red-900" disabled={isDrawingMode || !file || visiblePages.length <= 1 || isSaving || isEstimating || isMerging} title="Delete current page">
                                         <TrashIcon className="h-5 w-5" />
                                         <span className="hidden md:inline">Delete</span>
                                     </button>
-                                    <button onClick={handleSave} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded-md transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed" disabled={isDrawingMode || !file || isSaving || visiblePages.length === 0 || isEstimating || isMerging}>
-                                        {isSaving || isMerging ? (
-                                            <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                            </svg>
-                                        ) : (
-                                            <DownloadIcon className="h-5 w-5" />
-                                        )}
-                                        <span className="hidden md:inline">{isSaving ? 'Saving...' : (isMerging ? 'Merging...' : 'Save')}</span>
-                                    </button>
-                                </div>
-                            </div>
-                            <div className="mt-4 pt-4 border-t border-gray-700 flex flex-wrap justify-center sm:justify-between items-center gap-4">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-sm font-medium text-gray-300">Compression:</span>
-                                    <div className="flex items-center gap-1 bg-gray-900/50 p-1 rounded-md">
-                                        {qualityLevels.map(level => (
-                                            <button
-                                                key={level.name}
-                                                onClick={() => setResizeQuality(level.value)}
-                                                disabled={isSaving || isDrawingMode || isEstimating || isMerging}
-                                                className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                                                    resizeQuality === level.value
-                                                        ? 'bg-blue-600 text-white'
-                                                        : 'bg-transparent text-gray-300 hover:bg-gray-700'
-                                                }`}
-                                            >
-                                                {level.name}
-                                            </button>
-                                        ))}
-                                    </div>
-                                     {(isEstimating || estimatedSize) && (
-                                        <div className="text-sm text-gray-400 font-mono ml-4 whitespace-nowrap">
-                                            Est. Size: {isEstimating ? '...' : (estimatedSize ? formatBytes(estimatedSize) : '')}
-                                        </div>
-                                    )}
-                                </div>
-                                {isDrawingMode && (
-                                    <div className="flex items-center gap-4">
-                                        <ColorPalette selectedColor={currentColor} onSelectColor={setCurrentColor} />
-                                        <button 
-                                            onClick={handleClearPageShapes}
-                                            className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-3 rounded-md transition-colors duration-200 text-sm"
-                                            title="Clear all shapes from this page"
-                                            disabled={!shapes[currentPage] || shapes[currentPage].length === 0}
-                                        >
-                                            <TrashIcon className="h-4 w-4" />
-                                            <span className="hidden sm:inline">Clear Shapes</span>
+                                    <div className="flex items-center rounded-md bg-gray-700">
+                                        <button onClick={() => initiateMerge('before')} className="flex items-center gap-2 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-l-md transition-colors duration-200 disabled:opacity-50" disabled={isDrawingMode || !file || isSaving || isEstimating || isMerging} title="Merge PDF before current page">
+                                           <span className="hidden md:inline">Merge Before</span>
+                                        </button>
+                                        <div className="w-px h-6 bg-gray-600"></div>
+                                        <button onClick={() => initiateMerge('after')} className="flex items-center gap-2 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-r-md transition-colors duration-200 disabled:opacity-50" disabled={isDrawingMode || !file || isSaving || isEstimating || isMerging} title="Merge PDF after current page">
+                                            <span className="hidden md:inline">Merge After</span>
                                         </button>
                                     </div>
-                                )}
+                                    <div className="relative">
+                                        <select 
+                                            onChange={(e) => setResizeQuality(e.target.value === 'null' ? null : Number(e.target.value))}
+                                            value={resizeQuality === null ? 'null' : resizeQuality}
+                                            className="bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-md appearance-none transition-colors duration-200 disabled:opacity-50"
+                                            disabled={isDrawingMode || !file || isSaving || isEstimating || isMerging}
+                                        >
+                                            {qualityLevels.map(level => (
+                                                <option key={level.name} value={level.value === null ? 'null' : level.value}>
+                                                    {level.name} Quality
+                                                </option>
+                                            ))}
+                                        </select>
+                                        {estimatedSize !== null && (
+                                            <div className="absolute top-full mt-1 right-0 text-xs bg-gray-900/80 backdrop-blur-sm p-1 rounded">
+                                                ~{formatBytes(estimatedSize)}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center rounded-md bg-green-700">
+                                        <button onClick={() => handleSave()} className="flex items-center gap-2 hover:bg-green-600 text-white font-bold py-2 px-3 rounded-l-md transition-colors duration-200 disabled:opacity-50 disabled:bg-green-900" disabled={isDrawingMode || !file || isSaving || isEstimating || isMerging} title="Save modified PDF">
+                                            <DownloadIcon className="h-5 w-5" />
+                                            <span className="hidden md:inline">Save</span>
+                                        </button>
+                                        <div className="w-px h-6 bg-green-600"></div>
+                                        <button onClick={handleSaveAs} className="flex items-center gap-2 hover:bg-green-600 text-white font-bold py-2 px-3 rounded-r-md transition-colors duration-200 disabled:opacity-50 disabled:bg-green-900" disabled={isDrawingMode || !file || isSaving || isEstimating || isMerging} title="Save as new file">
+                                            <SaveAsIcon className="h-5 w-5" />
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                        <PdfViewer 
-                            pdfDoc={pdfDoc} 
+                         </div>
+                         <PdfViewer
+                            pdfDoc={pdfDoc}
                             currentPage={currentPage}
                             rotation={rotations[currentPage] || 0}
                             onPrevPage={goToPrevPage}
                             onNextPage={goToNextPage}
-                            isPrevDisabled={currentVisibleIndex <= 0 || isEstimating || isMerging}
-                            isNextDisabled={currentVisibleIndex >= visiblePages.length - 1 || isEstimating || isMerging}
-                            pageLabel={visiblePages.length > 0 ? `${currentVisibleIndex + 1} / ${visiblePages.length}` : '0 / 0'}
+                            isPrevDisabled={currentVisibleIndex <= 0}
+                            isNextDisabled={currentVisibleIndex >= visiblePages.length - 1}
+                            pageLabel={`${currentVisibleIndex + 1} / ${visiblePages.length}`}
                             shapes={shapes[currentPage] || []}
                             isDrawingMode={isDrawingMode}
                             isEstimating={isEstimating}
@@ -589,7 +588,7 @@ const App: React.FC = () => {
                             scaleMode={scaleMode}
                             onInitiateMerge={initiateMerge}
                             onFileDropMerge={handleFileMerge}
-                        />
+                         />
                     </div>
                 )}
             </main>
