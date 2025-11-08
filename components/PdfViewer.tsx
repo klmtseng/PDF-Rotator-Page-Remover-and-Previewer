@@ -1,6 +1,3 @@
-
-
-
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 // FIX: The type `PDFPageViewport` has been renamed to `PageViewport` in recent versions of pdfjs-dist.
 import type { PDFDocumentProxy, PDFPageProxy, PageViewport } from 'pdfjs-dist';
@@ -86,7 +83,8 @@ interface PdfViewerProps {
     isMerging?: boolean;
     currentColor: string;
     onAddShape: (shape: Shape) => void;
-    scaleMode: 'fit-page' | 'default';
+    scaleMode: 'fit-page' | 'custom';
+    scale: number;
     onInitiateMerge: (position: 'before' | 'after') => void;
     onFileDropMerge: (file: File, position: 'before' | 'after') => void;
 }
@@ -107,6 +105,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     currentColor,
     onAddShape,
     scaleMode,
+    scale: customScale,
     onInitiateMerge,
     onFileDropMerge,
 }) => {
@@ -136,7 +135,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                 const container = viewerContainerRef.current;
                 if (!canvas || !container) return;
 
-                let scale = 1.5; // Default scale
+                let scale: number;
                 if (scaleMode === 'fit-page') {
                     const unrotatedViewport = page.getViewport({ scale: 1 });
                     // Subtract padding from container size
@@ -146,6 +145,8 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                     const scaleX = containerWidth / unrotatedViewport.width;
                     const scaleY = containerHeight / unrotatedViewport.height;
                     scale = Math.min(scaleX, scaleY, 2.5); // Cap scale at 2.5
+                } else {
+                    scale = customScale;
                 }
 
                 const viewport = page.getViewport({ scale: scale, rotation: rotation });
@@ -190,7 +191,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
         return () => {
             isCancelled = true;
         };
-    }, [pdfDoc, currentPage, rotation, scaleMode]);
+    }, [pdfDoc, currentPage, rotation, scaleMode, customScale]);
 
     const pageOriginalDimensions = useMemo(() => {
         if (!pageViewport) return { width: 1, height: 1 };

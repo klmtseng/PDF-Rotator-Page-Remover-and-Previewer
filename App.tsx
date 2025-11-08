@@ -3,8 +3,9 @@ import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import FileDropzone from './components/FileDropzone';
 import PdfViewer, { Shape } from './components/PdfViewer';
 import { Header } from './components/Header';
-import { RotateCcwIcon, RotateCwIcon, DownloadIcon, TrashIcon, SquareIcon, FitToScreenIcon, SaveAsIcon } from './components/Icons';
+import { RotateCcwIcon, RotateCwIcon, DownloadIcon, TrashIcon, SquareIcon, FitToScreenIcon, SaveAsIcon, ZoomInIcon, ZoomOutIcon } from './components/Icons';
 import ColorPalette from './components/ColorPalette';
+import SaveAsModal from './components/SaveAsModal';
 
 // Type declarations for libraries loaded from CDN
 declare const pdfjsLib: any;
@@ -45,7 +46,11 @@ const App: React.FC = () => {
     const [estimatedSize, setEstimatedSize] = useState<number | null>(null);
 
     // New state for viewer scale
-    const [scaleMode, setScaleMode] = useState<'fit-page' | 'default'>('default');
+    const [scaleMode, setScaleMode] = useState<'fit-page' | 'custom'>('fit-page');
+    const [scale, setScale] = useState(1.0);
+
+    // New state for Save As modal
+    const [isSaveAsModalOpen, setIsSaveAsModalOpen] = useState(false);
 
     const loadPdf = useCallback(async (selectedFile: File, startingPage?: number) => {
         if (!selectedFile) return;
@@ -433,12 +438,14 @@ const App: React.FC = () => {
     
     const handleSaveAs = () => {
         if (!file) return;
-        const originalName = file.name.replace(/\.pdf$/i, '');
-        const suggestedName = `${originalName}_copy.pdf`;
-        const newName = window.prompt("Enter new file name:", suggestedName);
+        setIsSaveAsModalOpen(true);
+    };
+
+    const confirmSaveAs = (newName: string) => {
         if (newName && newName.trim() !== "") {
             handleSave(newName.trim());
         }
+        setIsSaveAsModalOpen(false);
     };
     
     const resetState = (fullReset = true) => {
@@ -456,7 +463,9 @@ const App: React.FC = () => {
       setResizeQuality(null);
       setEstimatedSize(null);
       setIsEstimating(false);
-      setScaleMode('default');
+      setScaleMode('fit-page');
+      setScale(1.0);
+      setIsSaveAsModalOpen(false);
     }
 
     const goToPrevPage = () => {
@@ -478,9 +487,19 @@ const App: React.FC = () => {
         { name: 'High', value: 0.92 }
     ];
 
-    const toggleScaleMode = () => {
-        setScaleMode(prev => prev === 'default' ? 'fit-page' : 'default');
-    }
+    const handleFitToPage = () => {
+        setScaleMode('fit-page');
+    };
+
+    const handleZoomIn = () => {
+        setScaleMode('custom');
+        setScale(prev => Math.min(prev + 0.2, 3.0)); // Cap zoom at 300%
+    };
+    
+    const handleZoomOut = () => {
+        setScaleMode('custom');
+        setScale(prev => Math.max(prev - 0.2, 0.2)); // Cap zoom out at 20%
+    };
 
     return (
         <div className="min-h-screen bg-gray-900 text-gray-200 flex flex-col items-center p-4 sm:p-6 lg:p-8">
@@ -512,15 +531,24 @@ const App: React.FC = () => {
                                             <span className="hidden md:inline">Right</span>
                                         </button>
                                     </div>
-                                    <button 
-                                        onClick={toggleScaleMode} 
-                                        className={`flex items-center gap-2 text-white font-bold py-2 px-4 rounded-md transition-colors duration-200 disabled:opacity-50 ${scaleMode === 'fit-page' ? 'bg-blue-600 hover:bg-blue-500' : 'bg-gray-700 hover:bg-gray-600'}`}
-                                        disabled={!file || isSaving || isEstimating || isMerging}
-                                        title="Fit page to screen"
-                                    >
-                                        <FitToScreenIcon className="h-5 w-5"/>
-                                        <span className="hidden md:inline">Fit to Page</span>
-                                    </button>
+                                    <div className="flex items-center rounded-md bg-gray-700">
+                                        <button onClick={handleZoomOut} className="flex items-center gap-2 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-l-md transition-colors duration-200 disabled:opacity-50" disabled={!file || isSaving || isEstimating || isMerging} title="Zoom Out">
+                                            <ZoomOutIcon className="h-5 w-5" />
+                                        </button>
+                                        <div className="w-px h-6 bg-gray-600"></div>
+                                        <button 
+                                            onClick={handleFitToPage} 
+                                            className={`flex items-center gap-2 text-white font-bold py-2 px-3 transition-colors duration-200 disabled:opacity-50 ${scaleMode === 'fit-page' ? 'bg-blue-600 hover:bg-blue-500' : 'hover:bg-gray-600'}`}
+                                            disabled={!file || isSaving || isEstimating || isMerging}
+                                            title="Fit page to screen"
+                                        >
+                                            <FitToScreenIcon className="h-5 w-5"/>
+                                        </button>
+                                        <div className="w-px h-6 bg-gray-600"></div>
+                                        <button onClick={handleZoomIn} className="flex items-center gap-2 hover:bg-gray-600 text-white font-bold py-2 px-3 rounded-r-md transition-colors duration-200 disabled:opacity-50" disabled={!file || isSaving || isEstimating || isMerging} title="Zoom In">
+                                            <ZoomInIcon className="h-5 w-5" />
+                                        </button>
+                                    </div>
                                     <button 
                                         onClick={() => setIsDrawingMode(!isDrawingMode)} 
                                         className={`flex items-center gap-2 text-white font-bold py-2 px-4 rounded-md transition-colors duration-200 disabled:opacity-50 ${isDrawingMode ? 'bg-blue-600 hover:bg-blue-500' : 'bg-gray-700 hover:bg-gray-600'}`}
@@ -594,12 +622,19 @@ const App: React.FC = () => {
                             currentColor={currentColor}
                             onAddShape={handleAddShape}
                             scaleMode={scaleMode}
+                            scale={scale}
                             onInitiateMerge={initiateMerge}
                             onFileDropMerge={handleFileMerge}
                          />
                     </div>
                 )}
             </main>
+            <SaveAsModal
+                isOpen={isSaveAsModalOpen}
+                onClose={() => setIsSaveAsModalOpen(false)}
+                onSave={confirmSaveAs}
+                suggestedFileName={file ? `${file.name.replace(/\.pdf$/i, '')}_copy.pdf` : 'document_copy.pdf'}
+            />
         </div>
     );
 };
